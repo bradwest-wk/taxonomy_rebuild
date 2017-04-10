@@ -1,0 +1,1122 @@
+---
+title: "Revenue Calculation Structure"
+author: "Brad West"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: html_document
+# runtime: shiny
+---
+## Current Taxonomy
+
+<!-- # ## TO VISUALIZE DIFFERENCE BETWEEN CURRENT XBRL TAXONOMY REVENUE CALUCULATION STRUCTURE -->
+<!-- # AND REFERENCE TAXONOMY (IMPROVED) REVENUE CALCULATION STRUCTURE -->
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+# !diagnostics off
+```
+
+```{r prelims}
+# Load required packages
+library(tidyverse) # Data Wrangling
+library(readxl) # reading in Data
+library(networkD3) # Plotting
+library(magrittr) # exporting plots
+library(stringr) # string manipulation
+# library(ape)
+library(igraph) # probably the best data structure
+# library(network)
+
+directory <- "/Users/bradwest/Google_Drive/Projects/taxonomy_rebuild/revenue_calc_vis"
+setwd(directory)
+```
+
+```{r data_generation_calc, echo = FALSE, results = FALSE, include = FALSE}
+
+# This chunk loads the revenue calculation elements ('Revenues 2017.xlsx', sheet 2) and the calculation
+# edges ('Revenues 2017.xlsx', sheet 3), cleans the edge data, and filters to create tibble that
+# only icludes edges for Revenues.
+
+# Import elements used in current taxonomy revenue calculations
+elements <- read_excel("./current_revenue_names_170406.xlsx", sheet = 1, col_names = "element_name", col_types = "text", skip = 1)
+
+# Import child-parent element relationships for current taxonomy revenue calculations
+edges <- read_excel("./Revenues 2017.xlsx", sheet = 3)
+colnames(edges) <- c("child_element", "parent_element")
+edges <- edges[-which(edges$child_element=="name"), ] # wierd row
+
+# Filter to create df of all child_parent relationships with child revenue elements
+# Duplicates mean two parent elements for the child
+revenue_edges <- edges %>% 
+  filter(child_element %in% elements$element_name & parent_element %in% elements$element_name) %>% select(parent_element, child_element)
+
+# check for duplicated
+sum(duplicated(revenue_edges))
+```
+
+```{r list_of_lists_calc, echo = FALSE, results = FALSE, include = FALSE}
+
+# This chunk takes the revenue calculation structure edges from data_generation_calc 
+# chunk, finds the "roots" (those parent elements that are not children elements),
+# and then creates a list of lists, the prefered data structure for network_D3
+# visualization. Finally, extacts the children of "root" into their own lists.
+
+# Find "root"
+roots <- unique(revenue_edges[which(!(revenue_edges$parent_element %in% revenue_edges$child_element)), ][,1])
+
+# Create Nested List structure for the parent-children relationships
+# Every element is associated with a list of two.  The first list item is
+# the element name (one dimensional character vector) and the second
+# list item is an n dimensional list containing that elements n
+# children.  The outermost list is the "root" element, which has those
+# children than have no parent in the above dataset.
+
+# For future analysis, the "depth" of this list of lists will need to be
+# adjusted to account for the number of generations beneath a root.
+
+# Create outermost list
+level1 <- list(element = "root", children = vector(length(roots$parent_element), mode = "list"))
+# Nest lists within
+for(i in 1:length(roots$parent_element)){
+  c1 <- revenue_edges[which(revenue_edges$parent_element==roots$parent_element[i]), ]$child_element
+  level1[[2]][[i]] <- list(name = roots$parent_element[i], children = vector(length(c1), mode = "list"))
+  for (j in 1:length(c1)){
+    c2 <- revenue_edges[which(revenue_edges$parent_element==c1[j]), ]$child_element
+    if (length(c1) == 0){
+      break
+    } else {
+      level1[[2]][[i]][[2]][[j]] <- list(name = c1[j], children = vector(length(c2), mode = "list"))
+    }
+    for (k in 1:length(c2)){
+      c3 <- revenue_edges[which(revenue_edges$parent_element==c2[k]), ]$child_element
+      if (length(c2) == 0){
+        break
+      } else {
+        level1[[2]][[i]][[2]][[j]][[2]][[k]] <- list(name = c2[k], children = vector(length(c3), mode = "list"))
+      }
+      for (l in 1:length(c3)){
+        c4 <- revenue_edges[which(revenue_edges$parent_element==c3[l]), ]$child_element
+        if (length(c3) == 0){
+          break
+        } else {
+          level1[[2]][[i]][[2]][[j]][[2]][[k]][[2]][[l]] <- list(name = c3[l], children = vector(length(c4), mode = "list"))
+        }
+        for (m in 1:length(c4)){
+          c5 <- revenue_edges[which(revenue_edges$parent_element==c4[m]), ]$child_element
+          if (length(c4) == 0){
+            break
+          } else {
+            level1[[2]][[i]][[2]][[j]][[2]][[k]][[2]][[l]][[2]][[m]] <- list(name = c4[m], children = vector(length(c5), mode = "list"))
+          }
+          for (n in 1:length(c5)){
+            c6 <- revenue_edges[which(revenue_edges$parent_element==c5[n]), ]$child_element
+            if (length(c5) == 0){
+              break
+            } else {
+              level1[[2]][[i]][[2]][[j]][[2]][[k]][[2]][[l]][[2]][[m]][[2]][[n]] <- list(name = c5[n], children = vector(length(c6), mode = "list"))
+            }
+            for (o in 1:length(c6)){
+              c7 <- revenue_edges[which(revenue_edges$parent_element==c6[o]), ]$child_element
+              if (length(c6) == 0){
+                break
+              } else {
+                level1[[2]][[i]][[2]][[j]][[2]][[k]][[2]][[l]][[2]][[m]][[2]][[n]][[2]][[o]] <- list(name = c6[o], children = vector(length(c7), mode = "list"))
+              }
+              for (p in 1:length(c7)){
+                c8 <- revenue_edges[which(revenue_edges$parent_element==c7[p]), ]$child_element
+                if (length(c7) == 0){
+                  break
+                } else {
+                  level1[[2]][[i]][[2]][[j]][[2]][[k]][[2]][[l]][[2]][[m]][[2]][[n]][[2]][[o]][[2]][[p]] <- list(name = c7[p], children = vector(length(c8), mode = "list"))
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+# Extract lists for elements without parent in dataset
+# (one level down from "root")
+for(i in 1:length(level1[[2]][[1]][[2]])){
+  l <- level1[[2]][[i]]
+  assign(level1[[2]][[i]][[1]], l)
+}
+```
+
+```{r graph_network_D3_calc, echo=FALSE, include=F, results=F, eval = F}
+# included for reference
+ 
+# This chunk plots and saves network_D3 html diagonal (tree structure) and radial
+# networks for the various "roots" of the revenue calculation structure
+
+# Diagonal Networks
+# Small
+diagonalNetwork(InterestAndDividendIncomeSecurities,
+                fontSize = 15, opacity = 1, height = 650, width = 1200, linkColour = "#545454") %>% 
+  saveNetwork(file = paste0('./', as.name(roots$parent_element[1]), '_diag_net_sml.html'))
+# Large
+diagonalNetwork(InterestAndDividendIncomeSecurities,
+                fontSize = 11, opacity = 0.9, height = 2500, width = 4000) %>% 
+  saveNetwork(file = paste0('./', as.name(roots$parent_element[1]), '_diag_net_big.html'))
+# Small
+diagonalNetwork(Revenues,
+                fontSize = 11, opacity = 1, height = 650, width = 1200) %>% 
+  saveNetwork(file = paste0('./', as.name(roots$parent_element[2]), '_diag_net_sml.html'))
+# Large
+diagonalNetwork(Revenues,
+                fontSize = 11, opacity = 0.8, height = 2500, width = 4000, linkColour = "#545454") %>% 
+  saveNetwork(file = paste0('./', as.name(roots$parent_element[2]), '_diag_net_big.html'))
+# Small
+diagonalNetwork(GainLossOnInvestments,
+                fontSize = 17, opacity = 1, height = 650, width = 1200, linkColour = "#545454") %>% 
+  saveNetwork(file = paste0('./', as.name(roots$parent_element[3]), '_diag_net_sml.html'))
+# Large
+diagonalNetwork(GainLossOnInvestments,
+                fontSize = 11, opacity = 0.9, height = 2500, width = 4000) %>% 
+  saveNetwork(file = paste0('./', as.name(roots$parent_element[3]), '_diag_net_big.html'))
+# Small
+diagonalNetwork(HealthCareOrganizationRevenueNetOfPatientServiceRevenueProvisions,
+                fontSize = 17, opacity = 1, height = 650, width = 1200, linkColour = "#545454") %>% 
+  saveNetwork(file = paste0('./', as.name(roots$parent_element[4]), '_diag_net_sml.html'))
+# Large
+diagonalNetwork(HealthCareOrganizationRevenueNetOfPatientServiceRevenueProvisions,
+                fontSize = 11, opacity = 0.9, height = 2500, width = 4000) %>% 
+  saveNetwork(file = paste0('./', as.name(roots$parent_element[4]), '_diag_net_big.html'))
+# Small
+diagonalNetwork(ResultsOfOperationsRevenueFromOilAndGasProducingActivities,
+                fontSize = 11, opacity = 0.9, height = 650, width = 1200) %>% 
+  saveNetwork(file = paste0('./', as.name(roots$parent_element[5]), '_diag_net_sml.html'))
+# Large
+diagonalNetwork(ResultsOfOperationsRevenueFromOilAndGasProducingActivities,
+                fontSize = 11, opacity = 0.9, height = 2500, width = 4000) %>% 
+  saveNetwork(file = paste0('./', as.name(roots$parent_element[5]), '_diag_net_big.html'))
+# Small
+diagonalNetwork(MarketableSecuritiesUnrealizedGainLoss,
+                fontSize = 11, opacity = 0.9, height = 650, width = 1200) %>% 
+  saveNetwork(file = paste0('./', as.name(roots$parent_element[6]), '_diag_net_sml.html'))
+# Large
+diagonalNetwork(MarketableSecuritiesUnrealizedGainLoss,
+                fontSize = 11, opacity = 0.9, height = 2500, width = 4000) %>% 
+  saveNetwork(file = paste0('./', as.name(roots$parent_element[6]), '_diag_net_big.html'))
+
+# Radial Networks
+# Small
+radialNetwork(InterestAndDividendIncomeSecurities,
+                fontSize = 11, opacity = 0.9, height = 650, width = 1200) %>% 
+  saveNetwork(file = paste0('./', as.name(roots$parent_element[1]), '_rad_net_sml.html'))
+# Large
+radialNetwork(InterestAndDividendIncomeSecurities,
+                fontSize = 11, opacity = 0.9, height = 2500, width = 4000) %>% 
+  saveNetwork(file = paste0('./', as.name(roots$parent_element[1]), '_rad_net_big.html'))
+# Small
+radialNetwork(Revenues,
+                fontSize = 11, opacity = 0.9, height = 650, width = 1200) %>% 
+  saveNetwork(file = paste0('./', as.name(roots$parent_element[2]), '_rad_net_sml.html'))
+# Large
+radialNetwork(Revenues,
+                fontSize = 11, opacity = 0.9, height = 2500, width = 4000) %>% 
+  saveNetwork(file = paste0('./', as.name(roots$parent_element[2]), '_rad_net_big.html'))
+# Small
+radialNetwork(GainLossOnInvestments,
+                fontSize = 11, opacity = 0.9, height = 650, width = 1200) %>% 
+  saveNetwork(file = paste0('./', as.name(roots$parent_element[3]), '_rad_net_sml.html'))
+# Large
+radialNetwork(GainLossOnInvestments,
+                fontSize = 11, opacity = 0.9, height = 2500, width = 4000) %>% 
+  saveNetwork(file = paste0('./', as.name(roots$parent_element[3]), '_rad_net_big.html'))
+# Small
+radialNetwork(HealthCareOrganizationRevenueNetOfPatientServiceRevenueProvisions,
+                fontSize = 11, opacity = 0.9, height = 650, width = 1200) %>% 
+  saveNetwork(file = paste0('./', as.name(roots$parent_element[4]), '_rad_net_sml.html'))
+# Large
+radialNetwork(HealthCareOrganizationRevenueNetOfPatientServiceRevenueProvisions,
+                fontSize = 11, opacity = 0.9, height = 2500, width = 4000) %>% 
+  saveNetwork(file = paste0('./', as.name(roots$parent_element[4]), '_rad_net_big.html'))
+# Small
+radialNetwork(ResultsOfOperationsRevenueFromOilAndGasProducingActivities,
+                fontSize = 11, opacity = 0.9, height = 650, width = 1200) %>% 
+  saveNetwork(file = paste0('./', as.name(roots$parent_element[5]), '_rad_net_sml.html'))
+# Large
+radialNetwork(ResultsOfOperationsRevenueFromOilAndGasProducingActivities,
+                fontSize = 11, opacity = 0.9, height = 2500, width = 4000) %>% 
+  saveNetwork(file = paste0('./', as.name(roots$parent_element[5]), '_rad_net_big.html'))
+# Small
+radialNetwork(MarketableSecuritiesUnrealizedGainLoss,
+                fontSize = 11, opacity = 0.9, height = 650, width = 1200) %>% 
+  saveNetwork(file = paste0('./', as.name(roots$parent_element[6]), '_rad_net_sml.html'))
+# Large
+radialNetwork(MarketableSecuritiesUnrealizedGainLoss,
+                fontSize = 11, opacity = 0.9, height = 2500, width = 4000) %>% 
+  saveNetwork(file = paste0('./', as.name(roots$parent_element[6]), '_rad_net_big.html'))
+
+## Function for saving html widgits as PNG
+# ----------------------------------------
+library(htmlwidgets)
+
+widgetThumbnail <- function(p, thumbName, width = 1024, height = 768) {
+  phantom <- findPhantom()
+  
+  success <- FALSE
+  if(phantom == "") {
+    message("** phantomjs dependency could not be found - thumbnail cannot be generated (run phantomInstall() for details)")
+  } else {
+    res <- try({
+      ff <- paste0(thumbName, ".html")
+      ffjs <- paste0(thumbName, ".js")
+      
+      # don't want any padding
+      p$sizingPolicy$padding <- 0
+      suppressMessages(saveWidget(p, ff, selfcontained = FALSE))
+      
+      js <- paste0("var page = require('webpage').create();
+                   page.viewportSize = { width: ", width,", height: ", height," };
+                   page.clipRect = { top: 0, left: 0, width: ", width,", height: ", height," };
+                   page.open('", ff, "', function(status) {
+                   console.log(\"Status: \" + status);
+                   if(status === \"success\") {
+                   page.render('", thumbName, ".png');
+                   }
+                   phantom.exit();
+    });")
+      cat(js, file = ffjs)
+      system2(phantom, ffjs)
+    })
+    if(!inherits(res, "try-error")) {
+      success <- TRUE
+    }
+    if(!file.exists(paste0(thumbName, ".png"))) {
+      success <- FALSE
+    }
+  }
+  
+  if(!success) {
+    message("** could not create htmlwidget thumbnail... creating an empty thumbnail...")
+  }
+  }
+
+#' Get instructions on how to install phantomjs
+#' @export
+phantomInstall <- function() {
+  message("Please visit this page to install phantomjs on your system: http://phantomjs.org/download.html")
+}
+
+# similar to webshot
+findPhantom <- function() {
+
+  phantom <- Sys.which("phantomjs")
+
+  if(Sys.which("phantomjs") == "") {
+    if(identical(.Platform$OS.type, "windows")) {
+      phantom <- Sys.which(file.path(Sys.getenv("APPDATA"), "npm", "phantomjs.cmd"))
+    }
+  }
+
+  phantom
+
+}
+
+# Plot commands for above funtion
+# Revenues_static_plot <- diagonalNetwork(Revenues) # , fontSize = 16, opacity = 0.9, height = 6000, width = 9600)
+# widgetThumbnail(p = Revenues_static_plot, thumbName = "Revenues_diag_net_big", width = 9600, height = 6000)
+ 
+```
+
+<!-- # ## TO VISUALIZE CURRENT XBRL TAXONOMY REVENUE PRESENTATION STRUCTURE -->
+
+```{r data_generation_presentation, echo = FALSE, results = FALSE, include = FALSE}
+
+# This chunk loads the revenue elements (already loaded if data_generation_calc has been run);
+# loads the presentation stucture (2 column data frame with element names and depths); and uses
+# the depths to create an edge list of the entire taxonomy presentation structure.  The element name variable
+# is then manipulated to have "Abstract", "Domain", "Member", and "Axis" stripped off of it; and 
+# then a revenue specific edgelist is created using the revenue elements as vertices. 
+
+# Import elements
+elements <- read_excel("./Revenues 2017.xlsx", sheet = 2, col_names = "element_name", col_types = "text", skip = 1)
+
+# Import child-parent element relationships for current taxonomy revenue calculations
+edges_pre <- read_excel("./Taxonomy_2017_Draft.xlsx", sheet = 2, skip = 2)
+edges_pre <- edges_pre[ ,c(2,4)]
+colnames(edges_pre) <- c("name", "depth")
+edges_pre <- edges_pre[-which(is.na(edges_pre$depth)),]
+
+
+# Above, edges_pre has an element name and it's depth in the taxonomy
+# This function queries the index of the immediate children
+children <- function(x){
+  child <- integer(0)
+  for(i in seq(x)){
+    if (is.na(x[i+1])){
+      break
+    } else if (x[i+1] == x[1] + 1){
+      child <- c(child, i+1)
+    } else if (x[i+1] > x[1] + 1){
+      next
+    } else break
+  }
+  child
+}
+
+# Strategy to create Edgelist: Index through edges_pre$depth vector.  For each i, grab children,
+# create matrix of edges from edges_pre$name[i] to children, rbind to edge matrix
+
+# probably should use sapply for this
+edges_present <- matrix(nc = 2, dimnames = list(c(), c("parent_element", "child_element")))
+# max_depth <- max(edges_pre$depth)
+max_run <- max(which(edges_pre$depth==0)[-1] - which(edges_pre$depth==0)[-length(which(edges_pre$depth==0))]) # max possible children set
+for(i in seq(edges_pre$depth)){
+  child <- children(edges_pre$depth[i:min(length(edges_pre$depth), i + max_run)])
+  to_add <- cbind(rep(edges_pre$name[i], length(child)), edges_pre$name[child+i-1])
+  edges_present <- rbind(edges_present, to_add)
+}
+
+# Remove top row (initialized to NA)
+edges_present <- edges_present[-1,]
+sum(is.na(edges_present[,1]))
+
+# Get rid of duplicate values.  Likely due to the same elements across
+# financial statements
+edges_present <- unique(edges_present)
+
+# Remove "Abstract", "Axis", "Domain", and "Member" from end of elements
+edges_present[,1] <- str_split_fixed(edges_present[,1], "Abstract$|Axis$|Domain$|Member$", n = 2)[,1]
+edges_present[,2] <- str_split_fixed(edges_present[,2], "Abstract$|Axis$|Domain$|Member$", n = 2)[,1]
+
+# Filter to create df of all child_parent relationships with child revenue elements
+# Duplicates mean two parent elements for the child
+revenue_edges_present <- as_tibble(edges_present) %>%
+  filter(child_element %in% elements$element_name & parent_element %in% elements$element_name)
+
+# Unique Values
+# We get new duplicated values because of removing the final term of the element name (10 lines above)
+#### PERHAPS NOT THE RIGHT WAY TO DO THIS ####
+revenue_edges_present <- unique(revenue_edges_present)
+
+# check for duplicated
+sum(duplicated(revenue_edges_present))
+
+# Get rid of references to self
+revenue_edges_present <- revenue_edges_present[-which(revenue_edges_present[,1]==revenue_edges_present[,2]),]
+# and Revenue children
+# revenue_edges_present <- revenue_edges_present[-which(revenue_edges_present$child_element=="Revenues"), ]
+
+```
+
+```{r list_of_lists_presentation, echo=FALSE, include=F, results=F, eval = F}
+
+# This chunk creates a list of lists for the presentation structure and saves
+# a single network_D3 html widgit.  See chunk list_of_lists_calc for details
+
+# Nested List structure and networkD3
+# Create outermost list
+rev_child <- revenue_edges_present[which(revenue_edges_present$parent_element=="Revenues"),][,2]
+rev_pre_str <- list(name = "Revenues", children = vector(length(rev_child$child_element), mode = "list"))
+# Nest lists within
+for(i in 1:length(rev_child$child_element)){
+  c1 <- revenue_edges_present[which(revenue_edges_present$parent_element==rev_child$child_element[i]), ]$child_element
+  rev_pre_str[[2]][[i]] <- list(name = rev_child$child_element[i], children = vector(length(c1), mode = "list"))
+  for (j in seq(c1)){
+    c2 <- revenue_edges_present[which(revenue_edges_present$parent_element==c1[j]), ]$child_element
+    if (length(c1) == 0){
+      break
+    } else {
+      rev_pre_str[[2]][[i]][[2]][[j]] <- list(name = c1[j], children = vector(length(c2), mode = "list"))
+    }
+    for (k in seq(c2)){
+      c3 <- revenue_edges_present[which(revenue_edges_present$parent_element==c2[k]), ]$child_element
+      if (length(c2) == 0){
+        break
+      } else {
+        rev_pre_str[[2]][[i]][[2]][[j]][[2]][[k]] <- list(name = c2[k], children = vector(length(c3), mode = "list"))
+      }
+      for (l in seq(c3)){
+        c4 <- revenue_edges_present[which(revenue_edges_present$parent_element==c3[l]), ]$child_element
+        if (length(c3) == 0){
+          break
+        } else {
+          rev_pre_str[[2]][[i]][[2]][[j]][[2]][[k]][[2]][[l]] <- list(name = c3[l], children = vector(length(c4), mode = "list"))
+        }
+        for (m in seq(c4)){
+          c5 <- revenue_edges_present[which(revenue_edges_present$parent_element==c4[m]), ]$child_element
+          if (length(c4) == 0){
+            break
+          } else {
+            rev_pre_str[[2]][[i]][[2]][[j]][[2]][[k]][[2]][[l]][[2]][[m]] <- list(name = c4[m], children = vector(length(c5), mode = "list"))
+          }
+          for (n in seq(c5)){
+            c6 <- revenue_edges_present[which(revenue_edges_present$parent_element==c5[n]), ]$child_element
+            if (length(c5) == 0){
+              break
+            } else {
+              rev_pre_str[[2]][[i]][[2]][[j]][[2]][[k]][[2]][[l]][[2]][[m]][[2]][[n]] <- list(name = c5[n], children = vector(length(c6), mode = "list"))
+            }
+            for (o in seq(c6)){
+              c7 <- revenue_edges_present[which(revenue_edges_present$parent_element==c6[o]), ]$child_element
+              if (length(c6) == 0){
+                break
+              } else {
+                rev_pre_str[[2]][[i]][[2]][[j]][[2]][[k]][[2]][[l]][[2]][[m]][[2]][[n]][[2]][[o]] <- list(name = c6[o], children = vector(length(c7), mode = "list"))
+              }
+              for (p in seq(c7)){
+                c8 <- revenue_edges_present[which(revenue_edges_present$parent_element==c7[p]), ]$child_element
+                if (length(c7) == 0){
+                  break
+                } else {
+                  rev_pre_str[[2]][[i]][[2]][[j]][[2]][[k]][[2]][[l]][[2]][[m]][[2]][[n]][[2]][[o]][[2]][[p]] <- list(name = c7[p], children = vector(length(c8), mode = "list"))
+                }
+                for (q in seq(c8)){
+                  c9 <- revenue_edges_present[which(revenue_edges_present$parent_element==c8[q]), ]$child_element
+                  if (length(c8) == 0){
+                    break
+                  } else {
+                    rev_pre_str[[2]][[i]][[2]][[j]][[2]][[k]][[2]][[l]][[2]][[m]][[2]][[n]][[2]][[o]][[2]][[p]][[2]][[q]] <- list(name = c8[q], children = vector(length(c9), mode = "list"))
+                  }
+                  for (r in seq(c9)){
+                    c10 <- revenue_edges_present[which(revenue_edges_present$parent_element==c9[r]), ]$child_element
+                    if (length(c9) == 0){
+                      break
+                    } else {
+                      rev_pre_str[[2]][[i]][[2]][[j]][[2]][[k]][[2]][[l]][[2]][[m]][[2]][[n]][[2]][[o]][[2]][[p]][[2]][[q]][[2]][[r]] <- list(name = c9[r], children = vector(length(c10), mode = "list"))
+                    }
+                    for (s in seq(c10)){
+                      c11 <- revenue_edges_present[which(revenue_edges_present$parent_element==c10[s]), ]$child_element
+                      if (length(c10) == 0){
+                        break
+                      } else {
+                        rev_pre_str[[2]][[i]][[2]][[j]][[2]][[k]][[2]][[l]][[2]][[m]][[2]][[n]][[2]][[o]][[2]][[p]][[2]][[q]][[2]][[r]][[2]][[s]] <- list(name = c10[s], children = vector(length(c11), mode = "list"))
+                      }
+                      for (t in seq(c11)){
+                        c12 <- revenue_edges_present[which(revenue_edges_present$parent_element==c11[t]), ]$child_element
+                        if (length(c11) == 0){
+                          break
+                        } else {
+                          rev_pre_str[[2]][[i]][[2]][[j]][[2]][[k]][[2]][[l]][[2]][[m]][[2]][[n]][[2]][[o]][[2]][[p]][[2]][[q]][[2]][[r]][[2]][[s]][[2]][[t]] <- list(name = c11[t], children = vector(length(c12), mode = "list"))
+                        }
+                        for (u in seq(c12)){
+                          c13 <- revenue_edges_present[which(revenue_edges_present$parent_element==c12[u]), ]$child_element
+                          if (length(c12) == 0){
+                            break
+                          } else {
+                            rev_pre_str[[2]][[i]][[2]][[j]][[2]][[k]][[2]][[l]][[2]][[m]][[2]][[n]][[2]][[o]][[2]][[p]][[2]][[q]][[2]][[r]][[2]][[s]][[2]][[t]][[2]][[u]] <- list(name = c12[u], children = vector(length(c13), mode = "list"))
+                          }
+                          for (v in seq(c13)){
+                            c14 <- revenue_edges_present[which(revenue_edges_present$parent_element==c13[v]), ]$child_element
+                            if (length(c13) == 0){
+                              break
+                            } else {
+                              rev_pre_str[[2]][[i]][[2]][[j]][[2]][[k]][[2]][[l]][[2]][[m]][[2]][[n]][[2]][[o]][[2]][[p]][[2]][[q]][[2]][[r]][[2]][[s]][[2]][[t]][[2]][[u]][[2]][[v]] <- list(name = c13[v], children = vector(length(c14), mode = "list"))
+                            }
+                            for (w in seq(c14)){
+                              c15 <- revenue_edges_present[which(revenue_edges_present$parent_element==c14[w]), ]$child_element
+                              if (length(c14) == 0){
+                                break
+                              } else {
+                                rev_pre_str[[2]][[i]][[2]][[j]][[2]][[k]][[2]][[l]][[2]][[m]][[2]][[n]][[2]][[o]][[2]][[p]][[2]][[q]][[2]][[r]][[2]][[s]][[2]][[t]][[2]][[u]][[2]][[v]][[2]][[w]] <- list(name = c14[w], children = vector(length(c15), mode = "list"))
+                              }
+                              for (x in seq(c15)){
+                                c16 <- revenue_edges_present[which(revenue_edges_present$parent_element==c15[x]), ]$child_element
+                                if (length(c15) == 0){
+                                  break
+                                } else {
+                                  rev_pre_str[[2]][[i]][[2]][[j]][[2]][[k]][[2]][[l]][[2]][[m]][[2]][[n]][[2]][[o]][[2]][[p]][[2]][[q]][[2]][[r]][[2]][[s]][[2]][[t]][[2]][[u]][[2]][[v]][[2]][[w]][[2]][[x]] <- list(name = c15[x], children = vector(length(c16), mode = "list"))
+                                }
+                                for (y in seq(c16)){
+                                  c17 <- revenue_edges_present[which(revenue_edges_present$parent_element==c16[y]), ]$child_element
+                                  if (length(c16) == 0){
+                                    break
+                                  } else {
+                                    rev_pre_str[[2]][[i]][[2]][[j]][[2]][[k]][[2]][[l]][[2]][[m]][[2]][[n]][[2]][[o]][[2]][[p]][[2]][[q]][[2]][[r]][[2]][[s]][[2]][[t]][[2]][[u]][[2]][[v]][[2]][[w]][[2]][[x]][[2]][[w]] <- list(name = c16[w], children = vector(length(c17), mode = "list"))
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+# Plot
+library(networkD3)
+diagonalNetwork(rev_pre_str)
+diagonalNetwork(rev_pre_str,
+                fontSize = 11, opacity = 0.8, height = 2500, width = 4000, linkColour = "#545454") %>% 
+  saveNetwork(file = paste0('./', 'revenues_pre_str', '_diag_net_big.html'))
+```
+
+```{r igraph_presentation, echo=FALSE, include=F, results=F, eval = F}
+
+# This chunk creates an igraph object using nested for loops to create an
+# edgelist that has a single "Revenues" node using the edgelist from the
+# data_generation_presentation chunk.  Then creates an igraph object,
+# assigns attributes to it, and plots at various png sizes so the
+# viewer can zoom at high resolution.
+
+# igraph:
+rev_edges_pre <- as.matrix(revenue_edges_present)
+edge_pre <- rev_edges_pre[which(rev_edges_pre[,1]=="Revenues"),]
+for(i in seq(edge_pre[,1])){
+  children1 <- rev_edges_pre[which(rev_edges_pre[,1]==edge_pre[i,2]), ]
+  edge_pre <- rbind(edge_pre, children1)
+  for(j in seq(children1[,1])){
+    children2 <- rev_edges_pre[which(rev_edges_pre[,1]==children1[j,2]),, drop = F]
+    edge_pre <- rbind(edge_pre, children2)
+    for(k in seq(children2[,1])){
+      children3 <- rev_edges_pre[which(rev_edges_pre[,1]==children2[k,2]),, drop = F]
+      edge_pre <- rbind(edge_pre, children3)
+      for(l in seq(children3[,1])){
+        children4 <- rev_edges_pre[which(rev_edges_pre[,1]==children3[l,2]),, drop = F]
+        edge_pre <- rbind(edge_pre, children4)
+        for(m in seq(children4[,1])){
+          children5 <- rev_edges_pre[which(rev_edges_pre[,1]==children4[m,2]),, drop = F]
+          edge_pre <- rbind(edge_pre, children5)
+          for(n in seq(children5[,1])){
+            children6 <- rev_edges_pre[which(rev_edges_pre[,1]==children5[n,2]),, drop = F]
+            edge_pre <- rbind(edge_pre, children6)
+          }
+        }
+      }
+    }
+  }
+}
+edge_pre <- unique(edge_pre)
+
+# Create Graph
+g <- graph_from_edgelist(edge_pre, directed = T)
+l <- layout_as_tree(g)
+# create a name attribute for the edges.  Didn't end up using edge names
+E(g)[1:length(E(g))]$name <- tail_of(g, es = 1:length(E(g)))$name 
+# adjust size of vertex label
+V(g)$label.cex <- 1
+
+# function for wrapping the vertex label (name) by inserting newline before each capital letter
+# can avoid using this function by setting plotting parameter srt = 270 to rotate text 270 degreees
+wrap_name <- function(name) { # newlines in names
+  name <- paste((paste0(unlist(str_split(name, "(?=[A-Z])"))[-1], "\n")), sep = "", collapse = "")
+  name <- str_replace(name, "\n$", "")
+}
+# apply the wrap_name function to all of the vertex names
+V(g)$name_wrap <- sapply(V(g)$name, wrap_name, USE.NAMES = F)
+# set the plot parameters
+
+
+# To find paths to vertices, use shortest_paths() in igraph package
+short_path <- shortest_paths(g, from = 1, to = which(V(g)$name=="SalesRevenueGoodsNet"), output = "both", predecessors = T) # probably don't need predecessors argument in there
+# set colors
+darkgrey <- col2rgb("darkgrey")
+SkyBlue2 <- col2rgb("SkyBlue2")
+# set edge color attribute
+E(g)$color <- rgb(darkgrey[1,1], darkgrey[2,1], darkgrey[3,1], alpha = 100, max = 255)
+# only those paths you want to highlight (to red)
+E(g, path = short_path$vpath[[1]])$color <- rgb(255, 0, 0, alpha = 125, max = 255)
+# set vertex color attribute
+V(g)$color <- rgb(SkyBlue2[1,1], SkyBlue2[2,1], SkyBlue2[3,1], alpha = 125, max = 255)
+# only those paths you want to highlight (to red)
+V(g)[short_path$vpath[[1]]]$color <- rgb(255, 0, 0, alpha = 125, max = 255)
+
+# Messing around with shifting text relative to length of name so no overlap on nodes
+# solution is to create transparent nodes
+V(g)$name_length <- str_length(V(g)$name)
+framecolor <- rgb(darkgrey[1,1], darkgrey[2,1], darkgrey[3,1], alpha = 75, max = 255)
+# par(mfrow=c(1,1), cex = .25, cex.main = 4, cex.sub = 3, srt = 270, pty = "m")
+
+
+# Plot as PNG
+
+# png(filename = "./test", width = 2880, height = 2880, res = 100)
+# par(cex = 0.6, cex.main = 5, cex.sub = 4, srt = 270, mar = c(20,4,10,4))
+# plot(g, layout = l, vertex.label = V(g)$name, vertex.color = V(g)$color, vertex.frame.color = framecolor, vertex.shape = "circle", vertex.size = 1.25, vertex.label.dist = .1, vertex.label.degree = pi/2, vertex.label.color = "black", edge.arrow.size = .4, edge.arrow.width = 1, main = "Revenue Presentation Structure: Current (2017) XBRL Taxonomy", asp = 0, edge.curved = F)
+# dev.off()
+
+# Good Version, but pixelated at high zoom
+png(filename = "./revenues_presentation_str_small", width = 5760, height = 5760, res = 100)
+par(cex = 1, cex.main = 5, cex.sub = 4, srt = 270, mar = c(20,4,10,4))
+plot(g, layout = l, vertex.label = V(g)$name, vertex.color = V(g)$color, vertex.frame.color = framecolor, vertex.shape = "circle", vertex.size = 1.25, vertex.label.dist = .1, vertex.label.degree = pi/2, vertex.label.color = "black", edge.arrow.size = .4, edge.arrow.width = 1, main = "Revenue Presentation Structure: Current (2017) XBRL Taxonomy", asp = 0, edge.curved = F)
+dev.off()
+
+# Best version but large (9.9 MB)
+png(filename = "./revenues_presentation_str", width = 11520, height = 11520, res = 100)
+par(cex = 2, cex.main = 7, cex.sub = 8, srt = 270, mar = c(20,4,10,4))
+plot(g, layout = l, vertex.label = V(g)$name, vertex.color = V(g)$color, vertex.frame.color = framecolor, vertex.shape = "circle", vertex.size = 1.25, vertex.label.dist = .1, vertex.label.degree = pi/2, vertex.label.color = "black", edge.arrow.size = 2, edge.arrow.width = 1, edge.width = 3, main = "Revenue Presentation Structure: Current (2017) XBRL Taxonomy", asp = 0, edge.curved = F)
+dev.off()
+```
+
+```{r igraph_calc, eval = FALSE}
+
+# This chunk creates a Revenues Specific edgelist using the revenue_edges
+# edgelist from data_generation_calc chunk, creates an igraph object,
+# assigns attributes to it, and plots at various png sizes so the
+# viewer can zoom at high resolution.
+
+
+# # toy examples
+# # Revenues edgelist
+# el <- matrix(c("Revenues", "FinancialServicesRevenues", "Revenues", "InterestIncomeExpenseAfterProvisionForLoanLoss", "Revenues", "InvestmentBankingRevenue", "Revenues", "MarketDataRevenue", "Revenues", "NetInvestmentIncome", "FinancialServicesRevenues", "FeesAndCommissions", "FinancialServicesRevenues", "GainsLossesOnSalesOfAssets", "FinancialServicesRevenues", "PremiumsEarnedNet", "FinancialServicesRevenues", "PrincipalTransactionsRevenue", "FinancialServicesRevenues", "RevenueOtherFinancialServices", "GainsLossesOnSalesOfAssets", "GainLossOnSaleOfDerivatives"), nc = 2, byrow = T)
+# graph <- graph_from_edgelist(el[sample(1:11, 11),], directed = T)
+# layout <- layout_as_tree(graph)
+# plot(graph, layout = layout)
+# 
+# # toy forest example
+# el_forest <- matrix(c("Revenues", "FinancialServicesRevenues", "Revenues", "InterestIncomeExpenseAfterProvisionForLoanLoss", "Revenues", "InvestmentBankingRevenue", "Revenues", "MarketDataRevenue", "Revenues", "NetInvestmentIncome", "FinancialServicesRevenues", "FeesAndCommissions", "FinancialServicesRevenues", "GainsLossesOnSalesOfAssets", "FinancialServicesRevenues", "PremiumsEarnedNet", "FinancialServicesRevenues", "PrincipalTransactionsRevenue", "FinancialServicesRevenues", "RevenueOtherFinancialServices", "GainsLossesOnSalesOfAssets", "GainLossOnSaleOfDerivatives", "InterestAndDividendIncomeSecurities", "DividendIncomeOperating", "InterestAndDividendIncomeSecurities", "InterestIncomeOperating", "DividendIncomeOperating", "DividendIncomeSecuritiesOperatingTaxable","DividendIncomeOperating", "DividendIncomeSecuritiesOperatingTaxAdvantaged"), nc = 2, byrow = T)
+# graph_toy_forest <- graph_from_edgelist(el_forest, directed = T)
+# layout_toy_forest <- layout_as_tree(graph_toy_forest, root = c(which(V(graph_toy_forest)$name=="Revenues"), which(V(graph_toy_forest)$name=="InterestAndDividendIncomeSecurities")))
+# plot(graph_toy_forest, layout = layout_toy_forest)
+roots <- unique(revenue_edges[which(!(revenue_edges$parent_element %in% revenue_edges$child_element)), ][,1])
+
+# Revenue Calc full
+# Get just those edges related to Revenues
+rev_edges <- as.matrix(revenue_edges)
+edge <- rev_edges[which(rev_edges[,1]=="Revenues"),]
+for(i in seq(edge[,1])){
+  children1 <- rev_edges[which(rev_edges[,1]==edge[i,2]), ]
+  edge <- rbind(edge, children1)
+  for(j in seq(children1[,1])){
+    children2 <- rev_edges[which(rev_edges[,1]==children1[j,2]),, drop = F]
+    edge <- rbind(edge, children2)
+    for(k in seq(children2[,1])){
+      children3 <- rev_edges[which(rev_edges[,1]==children2[k,2]),, drop = F]
+      edge <- rbind(edge, children3)
+      for(l in seq(children3[,1])){
+        children4 <- rev_edges[which(rev_edges[,1]==children3[l,2]),, drop = F]
+        edge <- rbind(edge, children4)
+        for(m in seq(children4[,1])){
+          children5 <- rev_edges[which(rev_edges[,1]==children4[m,2]),, drop = F]
+          edge <- rbind(edge, children5)
+          for(n in seq(children5[,1])){
+            children6 <- rev_edges[which(rev_edges[,1]==children5[n,2]),, drop = F]
+            edge <- rbind(edge, children6)
+          }
+        }
+      }
+    }
+  }
+}
+edge <- unique(edge)
+
+
+### Run this to write to csv the edges
+for (p in seq(roots)){
+  rev_edges <- as.matrix(revenue_edges)
+  edge <- rev_edges[which(rev_edges[,1]==roots[p]),]
+  for(i in seq(edge[,1])){
+    children1 <- rev_edges[which(rev_edges[,1]==edge[i,2]), ]
+    edge <- rbind(edge, children1)
+    for(j in seq(children1[,1])){
+      children2 <- rev_edges[which(rev_edges[,1]==children1[j,2]),, drop = F]
+      edge <- rbind(edge, children2)
+      for(k in seq(children2[,1])){
+        children3 <- rev_edges[which(rev_edges[,1]==children2[k,2]),, drop = F]
+        edge <- rbind(edge, children3)
+        for(l in seq(children3[,1])){
+          children4 <- rev_edges[which(rev_edges[,1]==children3[l,2]),, drop = F]
+          edge <- rbind(edge, children4)
+          for(m in seq(children4[,1])){
+            children5 <- rev_edges[which(rev_edges[,1]==children4[m,2]),, drop = F]
+            edge <- rbind(edge, children5)
+            for(n in seq(children5[,1])){
+              children6 <- rev_edges[which(rev_edges[,1]==children5[n,2]),, drop = F]
+              edge <- rbind(edge, children6)
+            }
+          }
+        }
+      }
+    }
+  }
+  edge <- unique(edge)
+  edge <- as.data.frame(edge)
+  write_csv(edge, paste0("./", roots[p], "_edges.csv"))
+}
+
+# Create Graph
+g_calc <- graph_from_edgelist(edge, directed = T)
+l_calc <- layout_as_tree(g_calc)
+# create a name attribute for the edges.  Didn't end up using edge names
+E(g_calc)[1:length(E(g_calc))]$name <- tail_of(g_calc, es = 1:length(E(g_calc)))$name 
+# adjust size of vertex label
+V(g_calc)$label.cex <- 1
+# set colors
+darkgrey <- col2rgb("darkgrey")
+SkyBlue2 <- col2rgb("SkyBlue2")
+# set edge color attribute
+E(g_calc)$color <- rgb(darkgrey[1,1], darkgrey[2,1], darkgrey[3,1], alpha = 100, max = 255)
+# set vertex color attribute
+V(g_calc)$color <- rgb(SkyBlue2[1,1], SkyBlue2[2,1], SkyBlue2[3,1], alpha = 125, max = 255)
+framecolor <- rgb(darkgrey[1,1], darkgrey[2,1], darkgrey[3,1], alpha = 75, max = 255)
+
+## Create PNG
+# Good Version, but pixelated at high zoom
+png(filename = "./revenues_calc_str_small", width = 5760, height = 5760, res = 100)
+par(cex = 1, cex.main = 5, cex.sub = 4, srt = 270, mar = c(20,4,10,4))
+plot(g_calc, layout = l_calc, vertex.label = V(g_calc)$name, vertex.color = V(g_calc)$color, vertex.frame.color = framecolor, vertex.shape = "circle", vertex.size = 1.25, vertex.label.dist = .1, vertex.label.degree = pi/2, vertex.label.color = "black", edge.arrow.size = .4, edge.arrow.width = 1, main = "Revenue Calculation Structure: Current (2017) XBRL Taxonomy", asp = 0, edge.curved = F)
+dev.off()
+
+# Best version but large (9.9 MB)
+png(filename = "./revenues_calc_str_large", width = 11520, height = 11520, res = 100)
+par(cex = 2, cex.main = 7, cex.sub = 8, srt = 270, mar = c(20,4,10,4))
+plot(g_calc, layout = l_calc, vertex.label = V(g_calc)$name, vertex.color = V(g_calc)$color, vertex.frame.color = framecolor, vertex.shape = "circle", vertex.size = 1.25, vertex.label.dist = .1, vertex.label.degree = pi/2, vertex.label.color = "black", edge.arrow.size = 2, edge.arrow.width = 1, edge.width = 3, main = "Revenue Calculation Structure: Current (2017) XBRL Taxonomy", asp = 0, edge.curved = F)
+dev.off()
+
+# # As Forest
+# rev_edges <- as.matrix(revenue_edges)
+# roots <- unique(rev_edges[which(!(rev_edges[,1] %in% rev_edges[,2])), ][,1])
+# edge_forest <- matrix(nc = 2)
+# for(i in seq(roots)){
+#   children1 <- rev_edges[which(rev_edges[,1]==roots[i]),, drop = F]
+#   edge_forest <- rbind(edge_forest, children1)
+#   for(j in seq(children1[,1])){
+#     children2 <- rev_edges[which(rev_edges[,1]==children1[j,2]),, drop = F]
+#     edge_forest <- rbind(edge_forest, children2)
+#     for(k in seq(children2[,1])){
+#       children3 <- rev_edges[which(rev_edges[,1]==children2[k,2]),, drop = F]
+#       edge_forest <- rbind(edge_forest, children3)
+#       for(l in seq(children3[,1])){
+#         children4 <- rev_edges[which(rev_edges[,1]==children3[l,2]),, drop = F]
+#         edge_forest <- rbind(edge_forest, children4)
+#         for(m in seq(children4[,1])){
+#           children5 <- rev_edges[which(rev_edges[,1]==children4[m,2]),, drop = F]
+#           edge_forest <- rbind(edge_forest, children5)
+#           for(n in seq(children5[,1])){
+#             children6 <- rev_edges[which(rev_edges[,1]==children5[n,2]),, drop = F]
+#             edge_forest <- rbind(edge_forest, children6)
+#             for(o in seq(children6[,1])){
+#               children7 <- rev_edges[which(rev_edges[,1]==children6[o,2]),, drop = F]
+#               edge_forest <- rbind(edge_forest, children7)
+#             }
+#           }
+#         }
+#       }
+#     }
+#   }
+# }
+# edge_forest <- edge_forest[-which(is.na(edge_forest[,1])), ]
+# 
+# # Create Graph
+# graph_forest <- graph_from_edgelist(edge_forest, directed = T)
+# layout_forest <- layout_as_tree(graph_forest,
+#                                 root = c(which(V(graph_forest)$name==roots[1]), which(V(graph_forest)$name==roots[2]),
+#                                                        which(V(graph_forest)$name==roots[3]), which(V(graph_forest)$name==roots[4]),
+#                                                        which(V(graph_forest)$name==roots[5]), which(V(graph_forest)$name==roots[6]))
+#                                 , rootlevel = c(1,1,1,1,1,15), mode = "out")
+# plot(graph_forest, layout = layout_forest)
+```
+
+#### Revenues:
+
+```{r, echo = F}
+library(htmltools)
+includeHTML("./Revenues_diag_net_big.html")
+```
+
+#### Additional Calculations not Linked to Revenues In Current Taxonomy
+
+##### Interest And Dividend Income Securities:
+
+```{r}
+includeHTML("./InterestAndDividendIncomeSecurities_diag_net_sml.html")
+```
+
+#### Gain Loss On Investments:
+
+```{r}
+includeHTML("./GainLossOnInvestments_diag_net_sml.html")
+```
+
+#### Health Care Organization Revenue Net Of Patient Service Revenue Provision:
+
+```{r}
+includeHTML("./HealthCareOrganizationRevenueNetOfPatientServiceRevenueProvisions_diag_net_sml.html")
+```
+
+Note: Two other elements are not linked to Revenues in the current taxonomy: **ResultsOfOperationsRevenueFromOilAndGasProducingActivities** and **MarketableSecuritiesUnrealizedGainLoss**.
+
+```{r}
+# S&P 500 Revenue Analysis
+# This is the application of the existing taxonomy to actual filings - 
+# and we're retagging based on our reference taxonomy (in process as of 3/2/2017)
+# Each filer creates their own calculation relationships, so need to find a way to
+# identify the calculation parent for each of the company filings
+
+# For GAAP elements, we want to come up with a way of showing what information we can
+# know from that element (items higher in the tree I believe), and also visualize the
+# amounts that.  May also be good to calculate the percentage of "Revenues" calculation
+# that we can know
+
+# come up with a way of showing what information gets populated (and amounts) 
+#  - what amounts can we know with the current taxonomy (what percentage can we know)
+#  - going have things that are associated with others and 
+#  - Show the element name and the amount on the tree graph.
+
+# S&P 500 elements:
+# For the 1900 or so lines in the Framework Analysis, find all standard elements 
+# and populate the tree with them. By doing this, investors know that if they have 
+# an element that is highlighted, they can calculate total revenue or some other 
+# calculation with that.  Not sure how the amounts come into play here.
+
+# Amounts:
+# Query 2016 10K filings.
+# Be careful about overlaps on same level so we don't over count stuff
+	
+
+sp500 <- read_csv("./Framework Analysis - Revenue Analysis Round 2 S&P 500.csv", col_names = TRUE, skip = 1)
+sp500 <- sp500[-c(1, nrow(sp500)),]
+colnames(sp500) <- str_replace_all(names(sp500), "[\\s\\n]", "_")
+colnames(sp500) <- str_replace_all(names(sp500), "[()]", "")
+sp500 <- sp500 %>% mutate(existing_element_name = str_replace(sp500$Existing_Element_Name, ".*?(?=[A-Z])", ""))
+# existing_element_name <- str_replace(sp500$Existing_Element_Name, ".*?(?=[A-Z])", "")
+# sp500 <- bind_cols(sp500, existing_element_name)
+# filter to only include us-GAAP elements
+sp500_gaap <- sp500 %>% filter(Existing_Element_Name_Standard_or_Extension == "Standard")
+
+# Revenue Calculation Structure as an igraph object
+# Need to have run the igraph_calc chunk and created igraph named g_calc
+
+# Get Amounts for each row in sp500_gaap
+# we are missing some values here because of the aspect_value_selection_id == NULL in the query
+tenK_2016 <- read_csv("./rev_amounts_10k_2016.csv", col_names = TRUE)
+# tenK_2016 <- tenK_2016 %>% filter(cik %in% sp500_gaap$CIK)  # Query did this for us
+# Need to look at how the value sign is derived (are losses always negative, or do you need to multiply
+# by -1 which is in the data_points table?)
+
+sp500_gaap <- left_join(sp500_gaap, tenK_2016, by = c("existing_element_name" = "name", "CIK" = "cik"))
+sp500_gaap_rev <- sp500_gaap %>% select(Company, CIK, existing_element_name, Line_item_description, value,
+                                          form_type, filing_date, table_code, start_date, end_date,
+                                          Existing_Element_Name_Standard_or_Extension, everything())
+# calculate total amounts by element
+sp500_gaap_element_amount <- sp500_gaap_rev %>% group_by(existing_element_name) %>% 
+  summarise(amount = sum(value, na.rm = T))
+
+# create vector of existing_element_names (these are gaap names in the taxonomy)
+sp500_gaap_element <- unique(sp500_gaap$existing_element_name)
+
+# calculate shortest paths for names in sp500_gaap_element
+# this returns a list of 4: vpath, epath, predecessors, inbound_edges
+sp500_short_path <- shortest_paths(g_calc, from = 1, to = which(V(g_calc)$name %in% sp500_gaap_element_amount$existing_element_name), output = 'both')
+
+#set amount attribute from sp500_gaap_element_amount
+V(g_calc)$element_amount <- NA
+for(i in seq(V(g_calc)$name)){
+  if (V(g_calc)$name[i] %in% sp500_gaap_element_amount$existing_element_name){
+    V(g_calc)$element_amount[i] <- sp500_gaap_element_amount$amount[which(sp500_gaap_element_amount$existing_element_name==V(g_calc)$name[i])] / 1000000
+  } else {
+    next
+  }
+}
+
+# Get Element Usage
+usage <- read_csv("./element_usage_2016.csv", col_names = T)
+# three elements in V(g_calc)$name that are not in usage
+# V(g_calc)$name[which(!(V(g_calc)$name %in% sp500_usage$element_name))]
+sp500_usage <- usage %>% filter(element_name %in% V(g_calc)$name)
+# cut count variable into 10 levels
+sp500_usage$count_level <- cut(sp500_usage$count, breaks = quantile(sp500_usage$count, probs = seq(0, 1, .05)), labels = F)
+sp500_usage$count_level[nrow(sp500_usage)] <- 1
+## Set count of element usage in 2016 total
+# Set usage variable
+V(g_calc)$usage_raw <- NA
+V(g_calc)$usage_level <- NA
+for(i in seq(V(g_calc)$name)){
+  if (V(g_calc)$name[i] %in% sp500_usage$element_name){
+    ind <- which(sp500_usage$element_name==V(g_calc)$name[i])
+    V(g_calc)$usage_raw[i] <- sp500_usage$count[ind]
+    V(g_calc)$usage_level[i] <- sp500_usage$count_level[ind]
+  }
+}
+# Set vertex Color based off of V(g_calc)$usage_raw
+V(g_calc)$color <- "white"
+for(i in 1:length(V(g_calc)$color)){
+  V(g_calc)$color[i] <- heat.colors(20, alpha = 0.8)[21 - V(g_calc)$usage_level[i]]
+}
+V(g_calc)$color[is.na(V(g_calc)$color)] <- "white"
+
+# Set count of element usage for 2016
+V(g_calc)$count <- 2
+for(i in seq(V(g_calc)$count)){
+  V(g_calc)$count[i] <- exp(V(g_calc)$usage_level[i] / 15)
+}
+V(g_calc)$count[is.na(V(g_calc)$count)] <- .5
+  
+# # set count of element count in sp500 dataset
+# V(g_calc)$count <- 0
+# for(i in seq(V(g_calc)$name)){
+#   if (V(g_calc)$name[i] %in% sp500_gaap_element_amount$existing_element_name){
+#     V(g_calc)$count[i] <- sum(V(g_calc)$name[i]==sp500_gaap_rev$existing_element_name)
+#   } else {
+#     next
+#   }
+# }
+
+
+# set attributes
+# set colors
+darkgrey <- col2rgb("darkgrey")
+SkyBlue2 <- col2rgb("SkyBlue2")
+red_trans <- rgb(255, 0, 0, alpha = 125, max = 255)
+# set edge color attribute
+E(g_calc)$color <- rgb(darkgrey[1,1], darkgrey[2,1], darkgrey[3,1], alpha = 100, max = 255)
+# highlight those paths that have shortest path vertices (to red)
+for(i in seq(sp500_short_path$vpath)){
+  E(g_calc, path = sp500_short_path$vpath[[i]])$color <- rgb(SkyBlue2[1,1], SkyBlue2[2,1], SkyBlue2[3,1], alpha = 125, max = 255)
+}
+# set vertex color attribute
+# rgb(255, 0, 0, alpha = 125, max = 255)
+V(g_calc)$color <- rgb(255, 0, 0, alpha = 125, max = 255)
+# highlight those vertices that are part of shortest paths (to red)
+for(i in seq(sp500_short_path$vpath)){
+  V(g_calc)[sp500_short_path$vpath[[i]]]$color <- rgb(SkyBlue2[1,1], SkyBlue2[2,1], SkyBlue2[3,1], alpha = 125, max = 255)
+}
+# change vertex size
+V(g_calc)$label.cex <- 1
+V(g_calc)$label.cex[1] <- 4
+V(g_calc)$label.cex[2:12] <- 2
+framecolor <- rgb(darkgrey[1,1], darkgrey[2,1], darkgrey[3,1], alpha = 75, max = 255)
+
+# ### Heatmap Colors for nodes
+# el_usage <- as.data.frame(cbind(unique(sp500_gaap_rev$existing_element_name), rep.int(0, length(unique(sp500_gaap_rev$existing_element_name)))))
+# el_usage[,2] <- as.integer(el_usage[,2])
+# # Calculate Element Usage from sp500_gaap_rev
+# for(i in 1:nrow(el_usage)){
+#   el_usage[i,2] <- sum(sp500_gaap_rev$existing_element_name==el_usage[i,1])
+# }
+# # break into 6 levels
+# el_usage[,2] <- cut(el_usage[,2], breaks = 6, labels = FALSE)
+# for(i in 1:nrow(el_usage)){
+#   ind <- which(V(g_calc)$name==el_usage[i,1])
+#   if(length(ind) != 0){
+#     V(g_calc)$color[ind] <- heat.colors(6)[el_usage[i,2]]
+#   } else{
+#     V(g_calc)$color[ind] <- rgb(255, 255, 255, alpha = .5, max = 255)
+#   }
+# }
+
+# Function for colorstrip
+colorstrip <- function(colors) {
+  count <- length(colors)
+  m <- matrix(1:count, count, 1)
+  par(mai=c(0.2, 2, 1, 2), cex.axis=2, ann=T, tck=-1)
+  image(m, col=colors, ylab="", axes=FALSE)
+  axis(side=1, at= NULL,
+       labels=quantile(sp500_usage$count, probs = seq(0.05, 1, .05)))
+}
+
+
+# Plot
+
+# Good Version, but pixelated at high zoom
+# if element names are in use, attach amount
+for(i in seq(V(g_calc)$element_amount)){
+  if(is.na(V(g_calc)$element_amount[i])){
+    V(g_calc)$label[i] <- paste(V(g_calc)$name[i])
+  } else {
+    V(g_calc)$label[i] <- paste0(V(g_calc)$name[i], "; ", "$", format(V(g_calc)$element_amount[i], digits = 3, big.mark = ","))
+  }
+}
+
+png(filename = "./revenues_calc_str_sp500_small.png", width = 5760, height = 5960, res = 100)
+plot.new()
+# layout(matrix(c(1,2), nrow = 2), heights = c(5760, 200), widths = c(5760, 1000))
+par(fig = c(0, 1, .01, 1), cex = 1, cex.main = 5, cex.sub = 4, srt = 270, mar = c(20,4,10,4), font.lab = 2, new = TRUE)
+plot(g_calc, layout = l_calc, vertex.label = V(g_calc)$label, vertex.color = V(g_calc)$color, vertex.frame.color = framecolor, vertex.shape = "circle", vertex.size = V(g_calc)$count, vertex.label.dist = .1, vertex.label.degree = pi/2, vertex.label.color = "black", edge.arrow.size = .4, edge.arrow.width = 1, asp = 0, edge.curved = F)
+text(x = 1.05, y = 0, labels = "Revenue Calculation Structure: Current (2017) XBRL Taxonomy Showing 2016 S&P 500 Elements", srt = 270, font = 2, cex = 5)
+text(x = .2, y = -1.2, labels = "2016 Element Usage", srt = 0, font = 2, cex = 3, pos = 4)
+# text(x = .06, y = -.5, labels = "XBRL Element Name -- Used in 10-K 2016 Filings; Total Element Value ($ in Millions)", srt = 270, font = 2, cex = 2.5, pos = 4)
+# text(x = .03, y = -.5, labels = "XBRL Element Name -- Not Used", srt = 270, font = 2, cex = 2.5, pos = 4)
+# text(x = .0, y = -.5, labels = "Point size proportional to element usage", srt = 270, font = 2.5, cex = 2.5, pos = 4)
+# points(x = .07, y = -.47, cex = 5, pch = 21, col = 'darkgrey', bg = rgb(SkyBlue2[1,1], SkyBlue2[2,1], SkyBlue2[3,1], alpha = 125, max = 255))
+# points(x = .04, y = -.47, cex = 5, pch = 21, col = 'darkgrey', bg = rgb(255, 0, 0, alpha = 125, max = 255))
+# points(x = .01, y = -.47, cex = 3, pch = 21, col = 'darkgrey', bg = 'white')
+# legend("bottomright", legend = c(text(0, "XBRL Element Name -- Used in 10-K 2016 Filings; Total Element Value", srt = 270), text(0, "XBRL Element Name -- Not Used", srt = 270), text(0, "Point size proportional to # of element name uses", srt = 270)), pt.cex = c(5,5,3), pch = 21, col = darkgrey, pt.bg = c('SkyBlue2', rgb(255, 0, 0, alpha = 125, max = 255), 'white'), horiz = T)
+# colorstrip(rev(heat.colors(20)))
+par(fig = c(0, 1, 0, .01), cex = 3, cex.main = 5, cex.sub = 4, srt = 270, par(mar = c(.5,100,0,20)), font.lab = 2, new = TRUE)
+m <- matrix(1:20, 20, 1)
+image(z = m, col = rev(heat.colors(20, alpha = 0.7)), axes = F)
+axis(side = 3, at = seq(0, 1, 1/19), labels = round(quantile(sp500_usage$count, probs = seq(0.05, 1, .05))), srt = 90)
+dev.off()
+
+
+
+# Best version but large (~10 MB)
+png(filename = "./revenues_calc_str_sp500_large", width = 11520, height = 11520, res = 100)
+par(cex = 2, cex.main = 7, cex.sub = 8, srt = 270, mar = c(20,4,10,4))
+plot(g_calc, layout = l_calc, vertex.label = paste0(V(g_calc)$name, "; ", V(g_calc)$element_amount), vertex.color = V(g_calc)$color, vertex.frame.color = framecolor, vertex.shape = "circle", vertex.size = 1.25, vertex.label.dist = .1, vertex.label.degree = pi/2, vertex.label.color = "black", edge.arrow.size = 2, edge.arrow.width = 1, edge.width = 3, main = "Revenue Calculation Structure: Current (2017) XBRL Taxonomy Showing 2016 S&P 500 Elements", asp = 0, edge.curved = F)
+dev.off()
+```
+
+```{r presentation_new}
+# This chunk creates a tree for the parent-child list in 
+# Reg S-X 5-03.xlsx. First creates edgelist, then an igraph
+# object, and plots that igraph object
+
+reg_sx <- read_excel("./Reg S-X 5-03.xlsx", col_names = T)
+edges <- reg_sx[, 1:2]
+colnames(edges) <- c('parent', 'child')
+# Per Dorette Vermeulen request, update the following:
+# OtherSalesRevenueNet - The parent should be Revenues.
+# HealthCareOrganizationAdmissionsRevenue - The parent should be 
+# HealthCareOrganizationRevenueNetOfPatientServiceRevenueProvisions
+which(edges$child=="OtherSalesRevenueNet")
+which(edges$child=="HealthCareOrganizationAdmissionsRevenue")
+edges <- edges[-which(edges$child=="HealthCareOrganizationAdmissionsRevenue"), ]
+edges <- edges %>% bind_rows(tibble(parent = c("Revenues",
+                                        "HealthCareOrganizationRevenueNetOfPatientServiceRevenueProvisions"),
+                                  child = c("OtherSalesRevenueNet", 
+                                            "HealthCareOrganizationAdmissionsRevenue")))
+
+# fill in NA values on parent variable
+for(i in 1:nrow(edges)){
+  if (!is.na(edges$parent[i])){
+    el_name <- edges$parent[i]
+  } else { 
+    edges$parent[i] <- el_name
+  }
+}
+# sum(duplicated(edges))
+edge <- as.matrix(edges)
+
+# Create graph
+g <- graph_from_edgelist(edge, directed = T)
+l <- layout_as_tree(g)
+
+# adjust size of vertex label
+V(g)$label.cex <- 2
+# set colors
+darkgrey <- col2rgb("darkgrey")
+SkyBlue2 <- col2rgb("SkyBlue2")
+# set edge color attribute
+E(g)$color <- rgb(darkgrey[1,1], darkgrey[2,1], darkgrey[3,1], alpha = 250, max = 255)
+# set vertex color attribute
+V(g)$color <- rgb(SkyBlue2[1,1], SkyBlue2[2,1], SkyBlue2[3,1], alpha = 200, max = 255)
+framecolor <- rgb(darkgrey[1,1], darkgrey[2,1], darkgrey[3,1], alpha = 75, max = 255)
+
+## Create PNG
+# Good Version, but pixelated at high zoom
+png(filename = "./reg_sx_str_small.png", width = 5760, height = 5760, res = 100)
+par(cex = 1, cex.main = 5, cex.sub = 4, srt = 270, mar = c(20,4,10,4), font.lab = 2)
+plot(g, layout = l, vertex.label = V(g)$name, vertex.color = V(g)$color, vertex.frame.color = framecolor, vertex.shape = "circle", vertex.size = 2, vertex.label.dist = .1, vertex.label.degree = pi/2, vertex.label.color = "black", edge.arrow.size = .4, edge.arrow.width = 1, asp = 0, edge.curved = F)
+text(x = 1.05, y = 0, labels = paste0("Preliminary Revenue Model: ", Sys.Date()), srt = 270, font = 2, cex = 5)
+dev.off()
+```
+
+
+```{r}
+plot.new()
+par(fig = c(0, 10, 2, 10), new = TRUE)
+plot(1:10)
+par(fig = c(0, 10, 0, 2), new = TRUE)
+m <- matrix(1:20, 20, 1)
+image(z = m, col = heat.colors(20, alpha = 0.7), axes = F)
+axis(side = 3, at = seq(0, .95, .05), labels = rev(letters[1:20]))
+```
+
+
+
+
