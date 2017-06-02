@@ -86,15 +86,3 @@ for (h in seq(roots)){
   edge1 <- as.data.frame(edge1)
   write_csv(edge1, paste0("./", names(roots[h]), "_edges.csv"))
 }
-
-# Combine into one edgelist
-
-
-
-# prelim plot
-png(filename = "./prelim_cash_flow.png", width = 5760, height = 5760, res = 100)
-plot(g, layout = layout_as_tree(g, root = roots, rootlevel = c(1,1,rep(2, 6))), vertex.label.cex = V(g)$label.cex, vertex.label = V(g)$name, vertex.color = "Skyblue",
-     vertex.frame.color = "darkgrey", vertex.shape = "circle", vertex.size = 1.5,
-     vertex.label.dist = .1, vertex.label.degree = pi/2, vertex.label.color = "black",
-     edge.arrow.size = .6, edge.arrow.width = 1, asp = 0, edge.curved = F)
-dev.off()
