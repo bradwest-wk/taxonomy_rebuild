@@ -26,6 +26,7 @@ library(tidyverse) # Data Wrangling
 library(readxl) # Reading in Data
 library(stringr) # String manipulation
 library(igraph) # Graph data structure
+library(readxl) # load in taxonomy
 # library(png) # adding images to plots
 # library(RColorBrewer) # for prettier graphs
 
@@ -253,7 +254,7 @@ if (!dir.exists(paste0("./", "figures_", fig_dir))){
 image_name <- "Cash_flow_current_170421.png"
 
 ## With Scale, Color, and Title ##
-png(filename = paste0("./", "figures_", fig_dir, "/", image_name), width = 7200, height = 5760, res = 100)
+png(filename = paste0("./", "figures_", fig_dir, "/", image_name), width = 5760, height = 5760, res = 100)
 plot.new()
 # layout(matrix(c(1,2), nrow = 2), heights = c(5760, 200), widths = c(5760, 1000))
 par(fig = c(0, 1, .01, 1), cex = 1, cex.main = 5, cex.sub = 4, srt = 270, mar = c(20,4,10,4),
